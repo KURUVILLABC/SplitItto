@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  name      String?
+  bills     Bill[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([deletedAt])
+}
+
+model Bill {
+  id           String        @id @default(cuid())
+  userId       String?
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  merchantName String?
+  receiptDate  DateTime?
+  currency     String        @default("INR")
+  subtotal     Int
+  tax          Int
+  total        Int
+  imagePublicId String?
+  rawReceipt   RawReceipt?
+  billItems    BillItem[]
+  people       Person[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  @@index([userId, createdAt])
+  @@index([deletedAt])
+}
+
+model RawReceipt {
+  id             String   @id @default(cuid())
+  billId         String   @unique
+  bill           Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  ocrText        String
+  provider       String
+  confidence     Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  @@index([deletedAt])
+}
+
+model BillItem {
+  id          String          @id @default(cuid())
+  billId      String
+  bill        Bill            @relation(fields: [billId], references: [id], onDelete: Cascade)
+  name        String
+  quantity    Int
+  amount      Int
+  generated   GeneratedItem[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+
+  @@index([billId, deletedAt])
+}
+
+model GeneratedItem {
+  id           String       @id @default(cuid())
+  billItemId   String
+  billItem     BillItem     @relation(fields: [billItemId], references: [id], onDelete: Cascade)
+  label        String
+  amount       Int
+  position     Int
+  assignment   Assignment?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?
+
+  @@index([billItemId, position])
+}
+
+model Person {
+  id          String       @id @default(cuid())
+  billId      String
+  bill        Bill         @relation(fields: [billId], references: [id], onDelete: Cascade)
+  name        String
+  position    Int
+  assignments Assignment[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  @@index([billId, position])
+}
+
+model Assignment {
+  id              String        @id @default(cuid())
+  generatedItemId String        @unique
+  generatedItem   GeneratedItem @relation(fields: [generatedItemId], references: [id], onDelete: Cascade)
+  personId        String?
+  person          Person?       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  isCommon        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  @@index([personId])
+  @@index([deletedAt])
+}
