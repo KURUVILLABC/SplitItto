@@ -18,6 +18,28 @@ async function readWithOcrSpace(url: string, bytes: Uint8Array, format: string):
   return { ...parseReceiptText(result.text), ocrProvider: result.provider };
 }
 
+// Gemini gets two attempts (503 overloads are often transient) inside one 8.5 s budget.
+async function readWithGeminiOrFallback(
+  bytes: Uint8Array,
+  format: string,
+  ocrImageUrl: string,
+  apiKey: string,
+  model: string,
+): Promise<ReceiptData> {
+  const deadline = Date.now() + 8_500;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining < 2_000) break;
+    try {
+      const extraction = await extractReceiptWithGemini({ apiKey, model, bytes, format, timeoutMs: remaining });
+      return { ...extraction.receipt, ocrText: extraction.rawResponse, ocrProvider: "gemini" };
+    } catch {
+      continue;
+    }
+  }
+  return readWithOcrSpace(ocrImageUrl, bytes, format);
+}
+
 const requestSchema = z.object({
   imagePublicId: z.string().min(1).max(255),
   imageUrl: z.string().min(1).max(2000),
@@ -78,7 +100,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       expires_at: expiresAt,
     });
     let receipt: ReceiptData;
-    let geminiDebug = "";
     try {
       const imageResponse = await fetch(ocrImageUrl, { signal: AbortSignal.timeout(20_000) });
       if (!imageResponse.ok) {
@@ -86,19 +107,13 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
       const imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
       if (serverEnv.GEMINI_API_KEY) {
-        try {
-          const extraction = await extractReceiptWithGemini({
-            apiKey: serverEnv.GEMINI_API_KEY,
-            model: serverEnv.GEMINI_MODEL,
-            bytes: imageBytes,
-            format: imageFormat,
-            timeoutMs: 8_500,
-          });
-          receipt = { ...extraction.receipt, ocrText: extraction.rawResponse, ocrProvider: "gemini" };
-        } catch (geminiError) {
-          geminiDebug = geminiError instanceof Error ? geminiError.message : String(geminiError);
-          receipt = await readWithOcrSpace(ocrImageUrl, imageBytes, imageFormat);
-        }
+        receipt = await readWithGeminiOrFallback(
+          imageBytes,
+          imageFormat,
+          ocrImageUrl,
+          serverEnv.GEMINI_API_KEY,
+          serverEnv.GEMINI_MODEL,
+        );
       } else {
         receipt = await readWithOcrSpace(ocrImageUrl, imageBytes, imageFormat);
       }
@@ -111,7 +126,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       receipt.ocrProvider === "gemini"
         ? null
         : "This bill was read with basic OCR, which can misread names and amounts. Check every item, quantity, price, tax and total against the bill before continuing.";
-    const warning = [reconciled.warning, verifyWarning, geminiDebug && `DEBUG: ${geminiDebug}`].filter(Boolean).join(" ") || null;
+    const warning = [reconciled.warning, verifyWarning].filter(Boolean).join(" ") || null;
     return NextResponse.json({ ...reconciled.receipt, warning });
   } catch (error) {
     return jsonError(error);
