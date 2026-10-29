@@ -13,6 +13,11 @@ import { z } from "zod";
 
 export const runtime = "nodejs";
 
+async function readWithOcrSpace(url: string, bytes: Uint8Array, format: string): Promise<ReceiptData> {
+  const result = await new OcrSpaceProvider().extractImage({ url, bytes, format });
+  return { ...parseReceiptText(result.text), ocrProvider: result.provider };
+}
+
 const requestSchema = z.object({
   imagePublicId: z.string().min(1).max(255),
   imageUrl: z.string().min(1).max(2000),
@@ -80,16 +85,20 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
       const imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
       if (serverEnv.GEMINI_API_KEY) {
-        const extraction = await extractReceiptWithGemini({
-          apiKey: serverEnv.GEMINI_API_KEY,
-          model: serverEnv.GEMINI_MODEL,
-          bytes: imageBytes,
-          format: imageFormat,
-        });
-        receipt = { ...extraction.receipt, ocrText: extraction.rawResponse, ocrProvider: "gemini" };
+        try {
+          const extraction = await extractReceiptWithGemini({
+            apiKey: serverEnv.GEMINI_API_KEY,
+            model: serverEnv.GEMINI_MODEL,
+            bytes: imageBytes,
+            format: imageFormat,
+            timeoutMs: 6_000,
+          });
+          receipt = { ...extraction.receipt, ocrText: extraction.rawResponse, ocrProvider: "gemini" };
+        } catch {
+          receipt = await readWithOcrSpace(ocrImageUrl, imageBytes, imageFormat);
+        }
       } else {
-        const result = await new OcrSpaceProvider().extractImage({ url: ocrImageUrl, bytes: imageBytes, format: imageFormat });
-        receipt = { ...parseReceiptText(result.text), ocrProvider: result.provider };
+        receipt = await readWithOcrSpace(ocrImageUrl, imageBytes, imageFormat);
       }
     } catch (ocrError) {
       const detail = ocrError instanceof Error ? ocrError.message : "Unknown error.";

@@ -117,6 +117,7 @@ export async function extractReceiptWithGemini(input: {
   model: string;
   bytes: Uint8Array;
   format: string;
+  timeoutMs: number;
 }): Promise<{ receipt: ReceiptData; rawResponse: string }> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.model)}:generateContent`,
@@ -144,7 +145,7 @@ export async function extractReceiptWithGemini(input: {
           thinkingConfig: input.model.startsWith("gemini-3") ? { thinkingLevel: "low" } : { thinkingBudget: 0 },
         },
       }),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(input.timeoutMs),
     },
   );
   if (!response.ok) {
