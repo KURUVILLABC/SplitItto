@@ -157,7 +157,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         })),
       });
       return created;
-    });
+    }, { maxWait: 10_000, timeout: 30_000 });
     return NextResponse.json({ billId: bill.id }, { status: 201 });
   } catch (error) {
     return jsonError(error);
