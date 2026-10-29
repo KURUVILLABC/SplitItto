@@ -56,36 +56,21 @@ export async function POST(request: Request): Promise<NextResponse> {
     ) {
       throw new HttpError("Cloudinary is not configured for receipt OCR on this server.", 503);
     }
-    const cloudName = requireEnv("CLOUDINARY_CLOUD_NAME");
     cloudinary.config({
-      cloud_name: cloudName,
+      cloud_name: requireEnv("CLOUDINARY_CLOUD_NAME"),
       api_key: requireEnv("CLOUDINARY_API_KEY"),
       api_secret: requireEnv("CLOUDINARY_API_SECRET"),
       secure: true,
     });
-    const parsedUrl = new URL(imageUrl);
-    const expiresAt = Number(parsedUrl.searchParams.get("expires_at"));
-    const expectedUrl =
-      Number.isSafeInteger(expiresAt) &&
-      expiresAt * 1000 > Date.now() &&
-      expiresAt * 1000 <= Date.now() + 16 * 60 * 1000
-        ? cloudinary.utils.private_download_url(imagePublicId, imageFormat, {
-            resource_type: "image",
-            type: "private",
-            expires_at: expiresAt,
-          })
-        : "";
-    if (
-      parsedUrl.hostname !== "api.cloudinary.com" ||
-      parsedUrl.pathname !== `/v1_1/${cloudName}/image/download` ||
-      parsedUrl.searchParams.get("public_id") !== imagePublicId ||
-      parsedUrl.searchParams.get("type") !== "private" ||
-      !Number.isSafeInteger(expiresAt) ||
-      imageUrl !== expectedUrl
-    ) {
-      throw new HttpError("The receipt image URL is not a trusted upload.", 400);
-    }
-    const result = await new GoogleVisionProvider().extract(imageUrl);
+    // Build the signed download URL on the server from the verified public ID.
+    // Comparing against a client-supplied URL fails because the signature embeds a timestamp.
+    const expiresAt = Math.floor(Date.now() / 1000) + 15 * 60;
+    const ocrImageUrl = cloudinary.utils.private_download_url(imagePublicId, imageFormat, {
+      resource_type: "image",
+      type: "private",
+      expires_at: expiresAt,
+    });
+    const result = await new GoogleVisionProvider().extract(ocrImageUrl);
     return NextResponse.json({ ...parseReceiptText(result.text), ocrProvider: result.provider });
   } catch (error) {
     return jsonError(error);
