@@ -70,12 +70,18 @@ export async function POST(request: Request): Promise<NextResponse> {
       type: "private",
       expires_at: expiresAt,
     });
-    const imageResponse = await fetch(ocrImageUrl, { signal: AbortSignal.timeout(20_000) });
-    if (!imageResponse.ok) {
-      throw new Error(`Could not download receipt image from Cloudinary (${imageResponse.status}).`);
+    let result;
+    try {
+      const imageResponse = await fetch(ocrImageUrl, { signal: AbortSignal.timeout(20_000) });
+      if (!imageResponse.ok) {
+        throw new Error(`Could not download receipt image from Cloudinary (${imageResponse.status}).`);
+      }
+      const imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
+      result = await new GoogleVisionProvider().extractImage({ url: ocrImageUrl, bytes: imageBytes });
+    } catch (ocrError) {
+      const detail = ocrError instanceof Error ? ocrError.message : "Unknown error.";
+      throw new HttpError(`Receipt reading failed: ${detail}`, 502);
     }
-    const imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
-    const result = await new GoogleVisionProvider().extractImage({ url: ocrImageUrl, bytes: imageBytes });
     return NextResponse.json({ ...parseReceiptText(result.text), ocrProvider: result.provider });
   } catch (error) {
     return jsonError(error);
