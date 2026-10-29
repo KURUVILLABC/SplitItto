@@ -160,14 +160,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     }, { maxWait: 10_000, timeout: 30_000 });
     return NextResponse.json({ billId: bill.id }, { status: 201 });
   } catch (error) {
-    // TEMP DIAGNOSTIC: remove after root cause is found
-    const e = error as { name?: string; code?: string; message?: string };
-    if (!(error instanceof HttpError) && !(error instanceof z.ZodError)) {
-      return NextResponse.json(
-        { error: "DIAG", name: e?.name, code: e?.code, message: String(e?.message ?? "").slice(0, 500) },
-        { status: 500 },
-      );
-    }
     return jsonError(error);
   }
 }
