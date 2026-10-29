@@ -146,7 +146,10 @@ export async function extractReceiptWithGemini(input: {
       signal: AbortSignal.timeout(45_000),
     },
   );
-  if (!response.ok) throw new Error(`Gemini request failed (${response.status}).`);
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`Gemini request failed (${response.status}): ${detail}`);
+  }
   const body = (await response.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
