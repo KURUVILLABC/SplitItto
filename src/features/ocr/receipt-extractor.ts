@@ -141,6 +141,7 @@ export async function extractReceiptWithGemini(input: {
           temperature: 0,
           responseMimeType: "application/json",
           responseSchema: RESPONSE_SCHEMA,
+          thinkingConfig: input.model.startsWith("gemini-3") ? { thinkingLevel: "minimal" } : { thinkingBudget: 0 },
         },
       }),
       signal: AbortSignal.timeout(45_000),
