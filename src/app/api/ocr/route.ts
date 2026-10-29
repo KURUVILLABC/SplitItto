@@ -1,7 +1,7 @@
 import { v2 as cloudinary } from "cloudinary";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { GoogleVisionProvider } from "@/features/ocr/google-vision";
+import { OcrSpaceProvider } from "@/features/ocr/ocr-space";
 import { parseReceiptText } from "@/features/ocr/receipt-parser";
 import { requireEnv, serverEnv } from "@/lib/env";
 import { assertSameOrigin, HttpError, jsonError } from "@/lib/http";
@@ -77,7 +77,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         throw new Error(`Could not download receipt image from Cloudinary (${imageResponse.status}).`);
       }
       const imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
-      result = await new GoogleVisionProvider().extractImage({ url: ocrImageUrl, bytes: imageBytes });
+      result = await new OcrSpaceProvider().extractImage({ url: ocrImageUrl, bytes: imageBytes, format: imageFormat });
     } catch (ocrError) {
       const detail = ocrError instanceof Error ? ocrError.message : "Unknown error.";
       throw new HttpError(`Receipt reading failed: ${detail}`, 502);
