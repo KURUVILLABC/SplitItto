@@ -1,5 +1,5 @@
 import { requireEnv } from "@/lib/env";
-import type { OcrProvider, OcrResult } from "@/features/ocr/provider";
+import type { OcrImageSource, OcrProvider, OcrResult } from "@/features/ocr/provider";
 
 interface VisionResponse {
   responses?: Array<{
@@ -10,7 +10,14 @@ interface VisionResponse {
 
 export class GoogleVisionProvider implements OcrProvider {
   async extract(imageUrl: string): Promise<OcrResult> {
+    return this.extractImage({ url: imageUrl, bytes: new Uint8Array() });
+  }
+
+  async extractImage(source: OcrImageSource): Promise<OcrResult> {
     const apiKey = requireEnv("GOOGLE_VISION_API_KEY");
+    const image = source.bytes.byteLength > 0
+      ? { content: Buffer.from(source.bytes).toString("base64") }
+      : { source: { imageUri: source.url } };
     const response = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(apiKey)}`,
       {
@@ -19,7 +26,7 @@ export class GoogleVisionProvider implements OcrProvider {
         body: JSON.stringify({
           requests: [
             {
-              image: { source: { imageUri: imageUrl } },
+              image,
               features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
             },
           ],
