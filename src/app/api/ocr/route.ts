@@ -91,7 +91,7 @@ export async function POST(request: Request): Promise<NextResponse> {
             model: serverEnv.GEMINI_MODEL,
             bytes: imageBytes,
             format: imageFormat,
-            timeoutMs: 6_000,
+            timeoutMs: 8_500,
           });
           receipt = { ...extraction.receipt, ocrText: extraction.rawResponse, ocrProvider: "gemini" };
         } catch {
