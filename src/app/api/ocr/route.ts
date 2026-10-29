@@ -105,7 +105,12 @@ export async function POST(request: Request): Promise<NextResponse> {
       throw new HttpError(`Receipt reading failed: ${detail}`, 502);
     }
     const reconciled = reconcileReceipt(receipt);
-    return NextResponse.json({ ...reconciled.receipt, warning: reconciled.warning });
+    const verifyWarning =
+      receipt.ocrProvider === "gemini"
+        ? null
+        : "This bill was read with basic OCR, which can misread names and amounts. Check every item, quantity, price, tax and total against the bill before continuing.";
+    const warning = [reconciled.warning, verifyWarning].filter(Boolean).join(" ") || null;
+    return NextResponse.json({ ...reconciled.receipt, warning });
   } catch (error) {
     return jsonError(error);
   }
