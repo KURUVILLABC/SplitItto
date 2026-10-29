@@ -78,6 +78,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       expires_at: expiresAt,
     });
     let receipt: ReceiptData;
+    let geminiDebug = "";
     try {
       const imageResponse = await fetch(ocrImageUrl, { signal: AbortSignal.timeout(20_000) });
       if (!imageResponse.ok) {
@@ -94,7 +95,8 @@ export async function POST(request: Request): Promise<NextResponse> {
             timeoutMs: 8_500,
           });
           receipt = { ...extraction.receipt, ocrText: extraction.rawResponse, ocrProvider: "gemini" };
-        } catch {
+        } catch (geminiError) {
+          geminiDebug = geminiError instanceof Error ? geminiError.message : String(geminiError);
           receipt = await readWithOcrSpace(ocrImageUrl, imageBytes, imageFormat);
         }
       } else {
@@ -109,7 +111,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       receipt.ocrProvider === "gemini"
         ? null
         : "This bill was read with basic OCR, which can misread names and amounts. Check every item, quantity, price, tax and total against the bill before continuing.";
-    const warning = [reconciled.warning, verifyWarning].filter(Boolean).join(" ") || null;
+    const warning = [reconciled.warning, verifyWarning, geminiDebug && `DEBUG: ${geminiDebug}`].filter(Boolean).join(" ") || null;
     return NextResponse.json({ ...reconciled.receipt, warning });
   } catch (error) {
     return jsonError(error);
