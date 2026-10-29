@@ -1,5 +1,5 @@
-jest.mock("@/features/ocr/google-vision", () => ({
-  GoogleVisionProvider: class {
+jest.mock("@/features/ocr/ocr-space", () => ({
+  OcrSpaceProvider: class {
     async extract() {
       return {
         text: "Olive Kitchen\n01/01/2026\n2 x Product A 260.00\nProduct B 140.00\nGST 21.00\nGrand Total 421.00",
