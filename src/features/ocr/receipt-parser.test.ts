@@ -13,6 +13,19 @@ describe("receipt OCR parser", () => {
     expect(receipt.totalPaise).toBe(42100);
   });
 
+  it("ignores address, phone, and header lines", () => {
+    const receipt = parseReceiptText(
+      [
+        "AMAR",
+        "Ajay Mital Estate, Bldg No. 3",
+        "Mob: 8655668080",
+        "2 x Masala Dosa 100.00",
+        "Total 100.00",
+      ].join("\n"),
+    );
+    expect(receipt.items.map(({ name }) => name)).toEqual(["Masala Dosa"]);
+  });
+
   it("recovers amounts when OCR mistakes the rupee symbol for a leading 3", () => {
     const receipt = parseReceiptText(
       [

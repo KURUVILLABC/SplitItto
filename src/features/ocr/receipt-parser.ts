@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { ReceiptData } from "@/lib/receipt";
 import { parseRupees } from "@/lib/money";
 
+const MAX_LINE_AMOUNT_PAISE = 5_000_000;
+
 function findAmountCandidates(line: string): number[] {
   const matches = line.match(/(?:₹\s*)?(\d[\d,]*(?:\.\d{1,2})?)/g);
   if (!matches?.length) return [];
@@ -82,14 +84,15 @@ export function parseReceiptText(text: string): ReceiptData {
       : [];
   const ignoredLine = (line: string) =>
     /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(line) ||
-    /\b(grand\s*total|total\s*(?:due|amount)?|amount\s*payable|sub\s*total|subtotal|net\s*amount|gst|tax|cgst|sgst|vat|cash|change|discount|date|invoice|bill\s*(?:no|number))\b/i.test(line);
+    /\b(grand\s*total|total\s*(?:due|amount)?|amount\s*payable|sub\s*total|subtotal|net\s*amount|gst|tax|cgst|sgst|vat|cash|change|discount|date|invoice|bill\s*(?:no|number)|mob|phone|tel|road|rd|nagar|estate|thank|visit|reprint|qty|rate|particulars|api\s*#)\b/i.test(line) ||
+    /\+?\d[\d\s-]{7,}\d/.test(line);
   const parsedLines: { id: string; name: string; quantity: number; candidates: number[] }[] = [];
   const firstQuantityLine = lines.findIndex((line) => /^\s*\d+\s*[x×]\s*/i.test(line));
   for (const [lineIndex, line] of lines.entries()) {
     if (subtotalLine && line === subtotalLine) break;
     if (firstQuantityLine >= 0 && lineIndex < firstQuantityLine) continue;
     if (ignoredLine(line)) continue;
-    const amountCandidates = findAmountCandidates(line);
+    const amountCandidates = findAmountCandidates(line).filter((amount) => amount <= MAX_LINE_AMOUNT_PAISE);
     const quantityMatch = line.match(/^\s*(\d+)\s*[x×]\s*/i);
     if (!quantityMatch && amountCandidates.length === 0) {
       const previous = parsedLines[parsedLines.length - 1];
@@ -106,7 +109,7 @@ export function parseReceiptText(text: string): ReceiptData {
       .replace(/(?:₹\s*)?\d[\d,]*(?:\.\d{1,2})?\s*$/, "")
       .replace(/\s+/g, " ")
       .trim();
-    if (!name) continue;
+    if (!/\p{L}{3,}/u.test(name)) continue;
     parsedLines.push({ id: randomUUID(), name, quantity, candidates: amountCandidates });
   }
   const rawItemAmounts = parsedLines.map(({ candidates }) => candidates[0]);
