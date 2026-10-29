@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { OcrSpaceProvider } from "@/features/ocr/ocr-space";
 import { parseReceiptText } from "@/features/ocr/receipt-parser";
+import { extractReceiptWithGemini, reconcileReceipt } from "@/features/ocr/receipt-extractor";
+import type { ReceiptData } from "@/lib/receipt";
 import { requireEnv, serverEnv } from "@/lib/env";
 import { assertSameOrigin, HttpError, jsonError } from "@/lib/http";
 import { isLocalReceiptId, readLocalReceipt } from "@/lib/local-receipts";
@@ -70,19 +72,31 @@ export async function POST(request: Request): Promise<NextResponse> {
       type: "private",
       expires_at: expiresAt,
     });
-    let result;
+    let receipt: ReceiptData;
     try {
       const imageResponse = await fetch(ocrImageUrl, { signal: AbortSignal.timeout(20_000) });
       if (!imageResponse.ok) {
         throw new Error(`Could not download receipt image from Cloudinary (${imageResponse.status}).`);
       }
       const imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
-      result = await new OcrSpaceProvider().extractImage({ url: ocrImageUrl, bytes: imageBytes, format: imageFormat });
+      if (serverEnv.GEMINI_API_KEY) {
+        const extraction = await extractReceiptWithGemini({
+          apiKey: serverEnv.GEMINI_API_KEY,
+          model: serverEnv.GEMINI_MODEL,
+          bytes: imageBytes,
+          format: imageFormat,
+        });
+        receipt = { ...extraction.receipt, ocrText: extraction.rawResponse, ocrProvider: "gemini" };
+      } else {
+        const result = await new OcrSpaceProvider().extractImage({ url: ocrImageUrl, bytes: imageBytes, format: imageFormat });
+        receipt = { ...parseReceiptText(result.text), ocrProvider: result.provider };
+      }
     } catch (ocrError) {
       const detail = ocrError instanceof Error ? ocrError.message : "Unknown error.";
       throw new HttpError(`Receipt reading failed: ${detail}`, 502);
     }
-    return NextResponse.json({ ...parseReceiptText(result.text), ocrProvider: result.provider });
+    const reconciled = reconcileReceipt(receipt);
+    return NextResponse.json({ ...reconciled.receipt, warning: reconciled.warning });
   } catch (error) {
     return jsonError(error);
   }

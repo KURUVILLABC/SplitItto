@@ -422,14 +422,16 @@ export default function HomePage() {
         totalPaise: number;
         ocrText: string;
         ocrProvider: string;
+        warning: string | null;
       }>("/api/ocr", {
         imagePublicId: uploaded.imagePublicId,
         imageUrl: uploaded.imageUrl,
         imageFormat: uploaded.imageFormat,
       }, AbortSignal.timeout(60_000));
-      setReceipt({ ...ocr, imagePublicId: uploaded.imagePublicId });
+      const { warning, ...receiptData } = ocr;
+      setReceipt({ ...receiptData, imagePublicId: uploaded.imagePublicId });
       setScreen("verify");
-      setMessage("");
+      setMessage(warning ?? "");
     } catch (error) {
       const reason =
         error instanceof DOMException && error.name === "TimeoutError"
