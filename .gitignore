@@ -9,3 +9,6 @@ test-results
 !.env.example
 *.tsbuildinfo
 next-env.d.ts
+
+# Local Netlify folder
+.netlify

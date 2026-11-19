@@ -11,6 +11,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+  // Netlify serves each deploy from its own host, so the request host is trusted explicitly.
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: { error: "/" },
   callbacks: {
