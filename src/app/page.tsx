@@ -22,6 +22,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { AssignmentBoard } from "@/features/assignment/assignment-board";
 import { Button } from "@/components/ui/button";
 import {
@@ -144,6 +145,14 @@ function HomeScreen({ onStart }: { onStart: () => void }) {
   );
 }
 
+const AUTH_NOTICES: Record<string, string> = {
+  "gemini-scope": "Gemini access was not approved. Sign in again and keep the Gemini permission checked so the app can read your bills.",
+  AccessDenied: "Google sign-in was cancelled or blocked. If this app is still in testing, the app owner must add your Google account as a test user.",
+  Configuration: "Sign-in is not configured on this server. Ask the site administrator to check the AUTH_ settings.",
+  OAuthCallbackError: "Google sign-in could not be completed. Try again.",
+  default: "Sign-in did not finish. Try again.",
+};
+
 function CaptureScreen({
   onImage,
   onManual,
@@ -157,6 +166,16 @@ function CaptureScreen({
 }) {
   const uploadRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const { status } = useSession();
+  const signedIn = status === "authenticated";
+  const [authNotice, setAuthNotice] = useState("");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("authError") ?? params.get("error");
+    if (!code) return;
+    setAuthNotice(AUTH_NOTICES[code] ?? AUTH_NOTICES.default);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (file) onImage(file);
@@ -176,9 +195,22 @@ function CaptureScreen({
         <div className="capture-illustration">
           {busy ? <LoaderCircle className="spin" size={30} /> : <FileImage size={29} />}
         </div>
-        <h2>{busy ? "Reading your receipt…" : "Add your receipt"}</h2>
-        <p>{busy ? "Uploading securely and looking for each line item." : "A clear, flat photo works best. JPG, PNG, WEBP or HEIC · up to 4 MB."}</p>
-        {!busy && (
+        <h2>{busy ? "Reading your receipt…" : signedIn ? "Add your receipt" : "Sign in to scan"}</h2>
+        <p>
+          {busy
+            ? "Uploading securely and reading each line item with your Gemini."
+            : signedIn
+              ? "A clear, flat photo works best. JPG, PNG, WEBP or HEIC · up to 4 MB."
+              : "Sign in with Google so your own Gemini can read the bill. Your receipts are never read without signing in."}
+        </p>
+        {!busy && !signedIn && status !== "loading" && (
+          <div className="capture-actions">
+            <Button onClick={() => signIn("google", { callbackUrl: "/" })}>
+              Sign in with Google
+            </Button>
+          </div>
+        )}
+        {!busy && signedIn && (
           <div className="capture-actions">
             <Button onClick={() => cameraRef.current?.click()}>
               <ScanLine size={17} /> Open camera
@@ -188,10 +220,16 @@ function CaptureScreen({
             </Button>
           </div>
         )}
+        {authNotice && !signedIn && <div className="inline-error" role="alert">{authNotice}</div>}
         {message && <div className="inline-error" role="alert">{message}</div>}
         {!busy && (
           <button type="button" className="manual-link" onClick={onManual}>
             Enter receipt details manually <ChevronRight size={15} />
+          </button>
+        )}
+        {!busy && signedIn && (
+          <button type="button" className="manual-link" onClick={() => signOut({ callbackUrl: "/" })}>
+            Sign out
           </button>
         )}
         <input ref={cameraRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/heic,.heic,.heif" capture="environment" onChange={handleChange} />

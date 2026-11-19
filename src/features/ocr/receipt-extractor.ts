@@ -112,8 +112,15 @@ export function reconcileReceipt(receipt: ReceiptData): { receipt: ReceiptData; 
   };
 }
 
+export class GeminiApiError extends Error {
+  constructor(readonly status: number, detail: string) {
+    super(`Gemini request failed (${status}): ${detail}`);
+    this.name = "GeminiApiError";
+  }
+}
+
 export async function extractReceiptWithGemini(input: {
-  apiKey: string;
+  accessToken: string;
   model: string;
   bytes: Uint8Array;
   format: string;
@@ -123,7 +130,7 @@ export async function extractReceiptWithGemini(input: {
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.model)}:generateContent`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": input.apiKey },
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.accessToken}` },
       body: JSON.stringify({
         contents: [
           {
@@ -150,7 +157,7 @@ export async function extractReceiptWithGemini(input: {
   );
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 300);
-    throw new Error(`Gemini request failed (${response.status}): ${detail}`);
+    throw new GeminiApiError(response.status, detail);
   }
   const body = (await response.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;

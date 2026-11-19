@@ -2,6 +2,7 @@ import { v2 as cloudinary } from "cloudinary";
 import { NextResponse } from "next/server";
 import { requireEnv, serverEnv } from "@/lib/env";
 import { assertSameOrigin, HttpError, jsonError } from "@/lib/http";
+import { requireGoogleAccessToken } from "@/lib/google-session";
 import { saveLocalReceipt } from "@/lib/local-receipts";
 import { enforceRateLimit } from "@/lib/rate-limit";
 
@@ -28,6 +29,7 @@ function hasExpectedSignature(bytes: Uint8Array, mimeType: string): boolean {
 export async function POST(request: Request): Promise<NextResponse> {
   try {
     assertSameOrigin(request);
+    await requireGoogleAccessToken(request);
     await enforceRateLimit(request);
     const formData = await request.formData();
     const file = formData.get("file");
@@ -56,8 +58,9 @@ export async function POST(request: Request): Promise<NextResponse> {
         throw new HttpError("Cloudinary is only partially configured. Complete its credentials or clear them for local development.", 503);
       }
       const imagePublicId = await saveLocalReceipt(bytes);
+      const imageFormat = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
       return NextResponse.json(
-        { imagePublicId, imageUrl: `local://${imagePublicId}`, storageProvider: "local" },
+        { imagePublicId, imageUrl: `local://${imagePublicId}`, imageFormat, storageProvider: "local" },
         { status: 201 },
       );
     }

@@ -14,7 +14,7 @@ src/
     page.tsx             Guided capture → verify → assign → summary flow
   features/
     assignment/          Assignment state, allocation view, drag/drop board
-    ocr/                 Provider interface, Google Vision adapter, parser
+    ocr/                 Gemini receipt reader (user's OAuth token), response parser
     receipt/              Receipt state and persistence
     ui/                   UI preferences
   components/
@@ -43,14 +43,14 @@ PostgreSQL stores `User`, `Bill`, `RawReceipt`, `BillItem`, `GeneratedItem`, `Pe
 
 | Route | Responsibility |
 |---|---|
-| `POST /api/upload` | Validate image MIME, size (4 MB), and file signature; store as a private Cloudinary asset and issue a 15-minute signed OCR URL |
-| `POST /api/ocr` | Restrict OCR input to signed private receipt assets; call Google Vision and parse a receipt DTO |
+| `POST /api/upload` | Require a Google sign-in; validate image MIME, size (4 MB), and file signature; store as a private Cloudinary asset and issue a 15-minute signed download URL |
+| `POST /api/ocr` | Require a Google sign-in; read the receipt with the signed-in user's Gemini (using their Google OAuth token) and return a receipt DTO |
 | `POST /api/process-bill` | Validate bill math, distribute GST over unit items, cap expanded receipts at 50 |
 | `POST /api/validate-bill` | Check known targets, unique assignment, completeness, and exact totals |
 | `POST /api/save-bill` | Re-validate and atomically persist receipt, items, people, and assignments |
 | `GET /api/bill/[id]` | Return a saved bill without raw OCR text |
 
-OCR parsing is intentionally an editable estimate: receipt layouts vary, so the review screen requires the user to confirm extracted names, quantities, tax, and totals before processing. In development without Cloudinary credentials, images are kept in a restricted local temporary directory and read with Tesseract.js using its bundled English model; no external model download is needed. When no development database is configured, completed splits are stored as restricted local JSON records in a temporary directory. Production uploads, OCR, and persistence use private Cloudinary, Google Vision, and PostgreSQL.
+OCR parsing is intentionally an editable estimate: receipt layouts vary, so the review screen requires the user to confirm extracted names, quantities, tax, and totals before processing. Users sign in with Google, and the bill image is read by that user's Gemini through their OAuth token; uploads and reads are refused without a sign-in. The Gemini token stays in the encrypted server-side session cookie and is never sent to the browser. In development without Cloudinary credentials, images are kept in a restricted local temporary directory and read the same way. When no development database is configured, completed splits are stored as restricted local JSON records in a temporary directory. Production uploads, Gemini reading, and persistence use private Cloudinary, Gemini, and PostgreSQL.
 
 ### UI architecture
 
@@ -70,12 +70,12 @@ The App Router shell contains five guided states: landing, capture, receipt revi
 - npm
 - PostgreSQL 16+
 - A Cloudinary account
-- A Google Cloud project with the Vision API enabled and an API key
+- A Google Cloud project with the Generative Language API enabled and an OAuth 2.0 Web client (Google sign-in)
 - Upstash Redis REST credentials for production rate limiting
 
 ## Local setup
 
-1. Copy `.env.example` to `.env.local`. Set `DATABASE_URL`, the Cloudinary credentials, and `GOOGLE_VISION_API_KEY` to use the production-equivalent integrations; these are optional for the local development fallbacks.
+1. Copy `.env.example` to `.env.local`. Set `DATABASE_URL`, the Cloudinary credentials, and the Auth variables (`AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`) to use the production-equivalent integrations; the database and Cloudinary settings are optional for the local development fallbacks. Add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI on the OAuth client, and enable the Generative Language API on the project. While the OAuth consent screen is in testing mode, only the accounts listed as test users can sign in, and users must keep the Gemini permission checked on the consent screen. Sensitive-scope verification by Google is required before the app is open to all users.
 2. Install dependencies and generate Prisma's client:
 
    ```sh
@@ -96,7 +96,7 @@ The App Router shell contains five guided states: landing, capture, receipt revi
    npm run dev
    ```
 
-   Visit `http://localhost:3000`. When Cloudinary credentials are absent in development, image upload and English OCR use local temporary storage. When `DATABASE_URL` is absent, completed splits use local temporary storage instead; both fallbacks are disabled in production.
+   Visit `http://localhost:3000`. Sign in with Google to upload a bill. When Cloudinary credentials are absent in development, image upload uses local temporary storage. When `DATABASE_URL` is absent, completed splits use local temporary storage instead; both fallbacks are disabled in production.
 
 ## Environment variables
 
@@ -106,7 +106,12 @@ The App Router shell contains five guided states: landing, capture, receipt revi
 | `CLOUDINARY_CLOUD_NAME` | For image scans | Cloudinary cloud name |
 | `CLOUDINARY_API_KEY` | For image scans | Server-only API key |
 | `CLOUDINARY_API_SECRET` | For image scans | Server-only secret |
-| `GOOGLE_VISION_API_KEY` | For OCR | Server-only Vision API key |
+| `GEMINI_MODEL` | No | Gemini model used to read bills; default `gemini-3.8-flash` |
+| `AUTH_SECRET` | Yes | Secret used to encrypt the session cookie (`npx auth secret` generates one) |
+| `AUTH_GOOGLE_ID` | Yes | Google OAuth client ID |
+| `AUTH_GOOGLE_SECRET` | Yes | Google OAuth client secret (server-only) |
+| `AUTH_URL` | Production | Public app origin, for example `https://splitItto.example.com` |
+| `AUTH_TRUST_HOST` | Docker/Vercel | Set to `true` when the host is not auto-detected |
 | `UPSTASH_REDIS_REST_URL` | Production | Distributed rate-limit store |
 | `UPSTASH_REDIS_REST_TOKEN` | Production | Upstash REST token |
 | `RATE_LIMIT_MAX_REQUESTS` | No | Default 20 requests per window and client IP |
@@ -128,7 +133,7 @@ Playwright starts the development server and covers a complete manually entered 
 
 ## Docker deployment
 
-Set Cloudinary, Vision, and Upstash variables in the deployment environment, then run:
+Set Cloudinary, Google OAuth, Auth, and Upstash variables in the deployment environment, then run:
 
 ```sh
 docker compose up --build
@@ -138,7 +143,7 @@ Compose starts PostgreSQL, waits for its health check, applies Prisma migrations
 
 ## Vercel deployment
 
-1. Provision hosted PostgreSQL, Cloudinary, Google Vision, and Upstash Redis.
+1. Provision hosted PostgreSQL, Cloudinary, a Google OAuth client, and Upstash Redis.
 2. Import the repository into Vercel and set all production environment variables.
 3. Deploy. The build runs `prisma generate`; apply committed migrations to the production database with `npm run db:deploy` as a deployment step before directing traffic to a schema-incompatible release.
 4. Confirm the application origin uses HTTPS and the Cloudinary upload folder has the expected access and retention policy.
