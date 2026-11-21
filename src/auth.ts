@@ -6,6 +6,8 @@ export const GEMINI_OAUTH_SCOPE = "https://www.googleapis.com/auth/generative-la
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
       authorization: {
         params: { scope: `openid email profile ${GEMINI_OAUTH_SCOPE}`, access_type: "online" },
       },
