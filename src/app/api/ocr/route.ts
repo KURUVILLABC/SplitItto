@@ -17,15 +17,18 @@ const requestSchema = z.object({
   imageFormat: z.enum(["jpg", "jpeg", "png", "webp", "heic", "heif"]).optional(),
 });
 
-// Gemini gets two attempts inside one 8.5 s budget. Only Gemini 5xx responses are retried;
+// Gemini gets two attempts inside one 16 s budget. Only Gemini 5xx responses are retried;
 // auth, access, quota, and timeout failures would fail the same way again.
+// The image download (8 s) runs first, so the whole request stays under the 26 s function limit.
+const GEMINI_BUDGET_MS = 16_000;
+
 async function readWithGemini(
   accessToken: string,
   bytes: Uint8Array,
   format: string,
   model: string,
 ): Promise<ReceiptData> {
-  const deadline = Date.now() + 8_500;
+  const deadline = Date.now() + GEMINI_BUDGET_MS;
   let lastError: unknown = new Error("Gemini did not respond in time.");
   for (let attempt = 0; attempt < 2; attempt++) {
     const remaining = deadline - Date.now();
@@ -126,7 +129,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     let receipt: ReceiptData;
     let imageBytes: Uint8Array;
     try {
-      const imageResponse = await fetch(imageDownloadUrl, { signal: AbortSignal.timeout(20_000) });
+      const imageResponse = await fetch(imageDownloadUrl, { signal: AbortSignal.timeout(8_000) });
       if (!imageResponse.ok) throw new Error(`Cloudinary download failed (${imageResponse.status}).`);
       imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
     } catch {
