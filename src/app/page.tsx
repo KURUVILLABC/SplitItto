@@ -443,14 +443,25 @@ export default function HomePage() {
       const uploadData = new FormData();
       uploadData.set("file", file);
       const uploadResponse = await fetch("/api/upload", { method: "POST", body: uploadData });
-      const uploaded = (await uploadResponse.json()) as {
+      const uploadText = await uploadResponse.text();
+      let uploaded: {
         imagePublicId?: string;
         imageFormat?: string;
         geminiModel?: string;
         error?: string;
-      };
+      } = {};
+      try {
+        uploaded = JSON.parse(uploadText);
+      } catch {
+        // The server returned a non-JSON error page (for example a gateway timeout).
+      }
       if (!uploadResponse.ok || !uploaded.imagePublicId || !uploaded.geminiModel) {
-        throw new Error(uploaded.error ?? "Receipt upload failed.");
+        throw new Error(
+          uploaded.error ??
+            (uploadResponse.ok
+              ? "Receipt upload returned an unexpected response. Try again."
+              : `Receipt upload failed (status ${uploadResponse.status}). Try again.`),
+        );
       }
       const session = await getSession();
       if (!session?.googleAccessToken || (session.googleAccessTokenExpiresAt ?? 0) <= Date.now() / 1000 + 30) {

@@ -186,6 +186,7 @@ export async function extractReceiptFromImage(
     } catch (error) {
       lastError = error;
       if (!(error instanceof GeminiApiError) || error.status < 500) break;
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 2_000));
     }
   }
   throw lastError;
