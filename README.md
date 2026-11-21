@@ -44,7 +44,7 @@ PostgreSQL stores `User`, `Bill`, `RawReceipt`, `BillItem`, `GeneratedItem`, `Pe
 | Route | Responsibility |
 |---|---|
 | `POST /api/upload` | Require a Google sign-in; validate image MIME, size (4 MB), and file signature; store as a private Cloudinary asset and issue a 15-minute signed download URL |
-| `POST /api/ocr` | Require a Google sign-in; read the receipt with the signed-in user's Gemini (using their Google OAuth token) and return a receipt DTO |
+| `POST /api/upload` | Require a Google sign-in; store the image and return its ID plus the Gemini model name. The browser then sends the image to Gemini with the signed-in user's Google OAuth token |
 | `POST /api/process-bill` | Validate bill math, distribute GST over unit items, cap expanded receipts at 50 |
 | `POST /api/validate-bill` | Check known targets, unique assignment, completeness, and exact totals |
 | `POST /api/save-bill` | Re-validate and atomically persist receipt, items, people, and assignments |

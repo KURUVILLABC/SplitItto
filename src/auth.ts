@@ -3,6 +3,13 @@ import Google from "next-auth/providers/google";
 
 export const GEMINI_OAUTH_SCOPE = "https://www.googleapis.com/auth/generative-language.retriever";
 
+declare module "next-auth" {
+  interface Session {
+    googleAccessToken?: string;
+    googleAccessTokenExpiresAt?: number;
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Google({
@@ -23,13 +30,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account?.scope?.split(" ").includes(GEMINI_OAUTH_SCOPE)) return true;
       return "/?authError=gemini-scope";
     },
-    // The access token stays inside the encrypted JWT cookie and is read only on the server.
+    // The Gemini token is kept in the encrypted JWT cookie and handed to the signed-in session
+    // so the browser can call Gemini with the user's own quota.
     jwt({ token, account }) {
       if (account?.access_token) {
         token.googleAccessToken = account.access_token;
         token.googleAccessTokenExpiresAt = account.expires_at ?? 0;
       }
       return token;
+    },
+    session({ session, token }) {
+      session.googleAccessToken = typeof token.googleAccessToken === "string" ? token.googleAccessToken : undefined;
+      session.googleAccessTokenExpiresAt =
+        typeof token.googleAccessTokenExpiresAt === "number" ? token.googleAccessTokenExpiresAt : undefined;
+      return session;
     },
   },
 });

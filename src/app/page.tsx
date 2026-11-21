@@ -22,7 +22,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { signIn, signOut, getSession, useSession } from "next-auth/react";
 import { AssignmentBoard } from "@/features/assignment/assignment-board";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +30,7 @@ import {
   useAssignmentStore,
 } from "@/features/assignment/assignment-store";
 import { newEmptyReceipt, useReceiptStore } from "@/features/receipt/receipt-store";
+import { extractReceiptFromImage, geminiErrorMessage, reconcileReceipt } from "@/features/ocr/receipt-extractor";
 import { useUiStore } from "@/features/ui/ui-store";
 import { formatRupees, parseRupees } from "@/lib/money";
 import { validateReceipt } from "@/lib/receipt";
@@ -443,41 +444,40 @@ export default function HomePage() {
       uploadData.set("file", file);
       const uploadResponse = await fetch("/api/upload", { method: "POST", body: uploadData });
       const uploaded = (await uploadResponse.json()) as {
-        imageUrl?: string;
         imagePublicId?: string;
         imageFormat?: string;
+        geminiModel?: string;
         error?: string;
       };
-      if (!uploadResponse.ok || !uploaded.imageUrl || !uploaded.imagePublicId) {
+      if (!uploadResponse.ok || !uploaded.imagePublicId || !uploaded.geminiModel) {
         throw new Error(uploaded.error ?? "Receipt upload failed.");
       }
-      const ocr = await postJson<{
-        merchantName: string;
-        receiptDate: string;
-        items: { id: string; name: string; quantity: number; amountPaise: number }[];
-        subtotalPaise: number;
-        taxPaise: number;
-        totalPaise: number;
-        ocrText: string;
-        ocrProvider: string;
-        warning: string | null;
-      }>("/api/ocr", {
+      const session = await getSession();
+      if (!session?.googleAccessToken || (session.googleAccessTokenExpiresAt ?? 0) <= Date.now() / 1000 + 30) {
+        throw new Error("Your Google sign-in has expired. Sign in again to read this receipt.");
+      }
+      let extraction: Awaited<ReturnType<typeof extractReceiptFromImage>>;
+      try {
+        extraction = await extractReceiptFromImage({
+          accessToken: session.googleAccessToken,
+          model: uploaded.geminiModel,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          format: uploaded.imageFormat ?? "jpg",
+        });
+      } catch (ocrError) {
+        throw new Error(geminiErrorMessage(ocrError));
+      }
+      const reconciled = reconcileReceipt(extraction.receipt);
+      setReceipt({
+        ...reconciled.receipt,
+        ocrText: extraction.rawResponse,
+        ocrProvider: "gemini",
         imagePublicId: uploaded.imagePublicId,
-        imageUrl: uploaded.imageUrl,
-        imageFormat: uploaded.imageFormat,
-      }, AbortSignal.timeout(60_000));
-      const { warning, ...receiptData } = ocr;
-      setReceipt({ ...receiptData, imagePublicId: uploaded.imagePublicId });
+      });
       setScreen("verify");
-      setMessage(warning ?? "");
+      setMessage(reconciled.warning ?? "");
     } catch (error) {
-      const reason =
-        error instanceof DOMException && error.name === "TimeoutError"
-          ? "Receipt scanning took too long. Try a clearer image or enter the receipt details manually."
-          : error instanceof Error
-            ? error.message
-            : "Receipt scan failed.";
-      setMessage(reason);
+      setMessage(error instanceof Error ? error.message : "Receipt scan failed.");
     } finally {
       setBusy(false);
     }

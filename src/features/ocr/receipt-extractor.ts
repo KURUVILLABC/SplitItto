@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { formatRupees, parseRupees } from "@/lib/money";
 import type { ReceiptData } from "@/lib/receipt";
@@ -77,7 +76,7 @@ function toPaise(value: string, label: string): number {
 
 export function toReceiptData(output: ModelOutput): ReceiptData {
   const items = output.items.map((item) => ({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     name: item.name,
     quantity: item.quantity,
     amountPaise: toPaise(item.amount, `"${item.name}"`),
@@ -119,6 +118,14 @@ export class GeminiApiError extends Error {
   }
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 export async function extractReceiptWithGemini(input: {
   accessToken: string;
   model: string;
@@ -139,7 +146,7 @@ export async function extractReceiptWithGemini(input: {
               {
                 inline_data: {
                   mime_type: mimeByFormat[input.format] ?? "image/jpeg",
-                  data: Buffer.from(input.bytes).toString("base64"),
+                  data: bytesToBase64(input.bytes),
                 },
               },
             ],
@@ -166,4 +173,39 @@ export async function extractReceiptWithGemini(input: {
   if (!rawResponse) throw new Error("Gemini returned no receipt data.");
   const output = modelOutputSchema.parse(JSON.parse(rawResponse));
   return { receipt: toReceiptData(output), rawResponse };
+}
+
+// Only a Gemini 5xx is retried. Auth, access, quota, and timeout failures would fail the same way again.
+export async function extractReceiptFromImage(
+  input: Omit<Parameters<typeof extractReceiptWithGemini>[0], "timeoutMs">,
+): Promise<{ receipt: ReceiptData; rawResponse: string }> {
+  let lastError: unknown = new Error("Gemini did not respond in time.");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await extractReceiptWithGemini({ ...input, timeoutMs: 45_000 });
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof GeminiApiError) || error.status < 500) break;
+    }
+  }
+  throw lastError;
+}
+
+export function geminiErrorMessage(error: unknown): string {
+  if (error instanceof GeminiApiError) {
+    if (error.status === 401) return "Gemini rejected your Google sign-in. Sign out, sign in again, and retry.";
+    if (error.status === 403) {
+      return "Gemini access was not granted for this Google account. Approve Gemini access when signing in, and make sure the Generative Language API is enabled for this app. Then sign in again.";
+    }
+    if (error.status === 404) return "The configured Gemini model is not available. Ask the site administrator to check GEMINI_MODEL.";
+    if (error.status === 429) {
+      return "Your Gemini quota is used up or billing is not enabled for this Google account. Try again later or check your Gemini plan.";
+    }
+    if (error.status >= 500) return "Gemini is busy right now. Try again in a moment.";
+    return "Gemini could not process this image. Try a clearer photo or enter the items manually.";
+  }
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return "Gemini did not respond in time. Try again.";
+  }
+  return "Gemini could not read this receipt. Try a clearer photo or enter the items manually.";
 }

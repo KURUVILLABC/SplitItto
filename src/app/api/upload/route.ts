@@ -60,7 +60,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       const imagePublicId = await saveLocalReceipt(bytes);
       const imageFormat = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
       return NextResponse.json(
-        { imagePublicId, imageUrl: `local://${imagePublicId}`, imageFormat, storageProvider: "local" },
+        { imagePublicId, imageUrl: `local://${imagePublicId}`, imageFormat, storageProvider: "local", geminiModel: serverEnv.GEMINI_MODEL },
         { status: 201 },
       );
     }
@@ -104,7 +104,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
       upload.end(Buffer.from(bytes));
     });
-    return NextResponse.json({ ...uploaded, storageProvider: "cloudinary" }, { status: 201 });
+    return NextResponse.json({ ...uploaded, storageProvider: "cloudinary", geminiModel: serverEnv.GEMINI_MODEL }, { status: 201 });
   } catch (error) {
     return jsonError(error);
   }

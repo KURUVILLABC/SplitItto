@@ -1,4 +1,20 @@
-import { findArithmeticMismatch, reconcileReceipt, toReceiptData } from "@/features/ocr/receipt-extractor";
+import {
+  findArithmeticMismatch,
+  GeminiApiError,
+  geminiErrorMessage,
+  reconcileReceipt,
+  toReceiptData,
+} from "@/features/ocr/receipt-extractor";
+
+describe("geminiErrorMessage", () => {
+  it("tells the user to approve Gemini access on a 403", () => {
+    expect(geminiErrorMessage(new GeminiApiError(403, "denied"))).toMatch(/Approve Gemini access/);
+  });
+
+  it("reports a timed-out request as a timeout", () => {
+    expect(geminiErrorMessage(Object.assign(new Error("timed out"), { name: "TimeoutError" }))).toMatch(/did not respond in time/);
+  });
+});
 
 describe("findArithmeticMismatch", () => {
   const base = {
